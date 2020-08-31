@@ -13,15 +13,16 @@ import torch.nn.functional as F
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--model', type=str, default = '',  help='model path')
+parser.add_argument('--model', type=str, default = './cls/cls_model_9.pth',  help='model path')
 parser.add_argument('--num_points', type=int, default=2500, help='input batch size')
+parser.add_argument('--feature_transform', type=bool, default=False)
 
 
 opt = parser.parse_args()
 print(opt)
 
 test_dataset = ShapeNetDataset(
-    root='shapenetcore_partanno_segmentation_benchmark_v0',
+    root='../shapenetcore_partanno_segmentation_benchmark_v0',
     split='test',
     classification=True,
     npoints=opt.num_points,
@@ -30,7 +31,7 @@ test_dataset = ShapeNetDataset(
 testdataloader = torch.utils.data.DataLoader(
     test_dataset, batch_size=32, shuffle=True)
 
-classifier = PointNetCls(k=len(test_dataset.classes))
+classifier = PointNetCls(k=len(test_dataset.classes), feature_transform=opt.feature_transform)
 classifier.cuda()
 classifier.load_state_dict(torch.load(opt.model))
 classifier.eval()
