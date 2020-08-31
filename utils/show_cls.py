@@ -6,44 +6,55 @@ import torch.utils.data
 from torch.autograd import Variable
 from pointnet.dataset import ShapeNetDataset
 from pointnet.model import PointNetCls
+import numpy as np
 import torch.nn.functional as F
 
-
-#showpoints(np.random.randn(2500,3), c1 = np.random.uniform(0,1,size = (2500)))
+# showpoints(np.random.randn(2500,3), c1 = np.random.uniform(0,1,size = (2500)))
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument('--model', type=str, default = '',  help='model path')
+parser.add_argument('--model', type=str, default='../cls_model_99.pth', help='model path')
 parser.add_argument('--num_points', type=int, default=2500, help='input batch size')
-
+parser.add_argument(
+    '--batchSize', type=int, default=32, help='input batch size')
+parser.add_argument('--feature_transform', action='store_true', help="use feature transform")
 
 opt = parser.parse_args()
 print(opt)
 
 test_dataset = ShapeNetDataset(
-    root='shapenetcore_partanno_segmentation_benchmark_v0',
+    root='../shapenetcore_partanno_segmentation_benchmark_v0',
     split='test',
     classification=True,
     npoints=opt.num_points,
     data_augmentation=False)
 
 testdataloader = torch.utils.data.DataLoader(
-    test_dataset, batch_size=32, shuffle=True)
+    test_dataset, batch_size=opt.batchSize, shuffle=True)
 
-classifier = PointNetCls(k=len(test_dataset.classes))
+classifier = PointNetCls(k=len(test_dataset.classes), feature_transform=opt.feature_transform)
 classifier.cuda()
 classifier.load_state_dict(torch.load(opt.model))
 classifier.eval()
-
 
 for i, data in enumerate(testdataloader, 0):
     points, target = data
     points, target = Variable(points), Variable(target[:, 0])
     points = points.transpose(2, 1)
     points, target = points.cuda(), target.cuda()
-    pred, _, _ = classifier(points)
-    loss = F.nll_loss(pred, target)
-
-    pred_choice = pred.data.max(1)[1]
-    correct = pred_choice.eq(target.data).cpu().sum()
-    print('i:%d  loss: %f accuracy: %f' % (i, loss.data.item(), correct / float(32)))
+    pred1, _, _, glob_feat1 = classifier(points)
+    theta = np.random.uniform(0, np.pi * 2)
+    rotation_matrix = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    # TODO: why only rotate the x and z axis??
+    points = points.transpose(1, 2)
+    pts = points.cpu().numpy()
+    pts[:, :, [0, 2]] = pts[:, :, [0, 2]].dot(rotation_matrix)  # random rotation
+    points = torch.from_numpy(pts).cuda().transpose(2, 1)
+    pred2, _, _, glob_feat2 = classifier(points)
+    result_ = torch.cosine_similarity(glob_feat1, glob_feat2).__str__()
+    print('Global feature cosine similarity:',
+          result_[result_.find('['): -result_[::-1].find(']')].lstrip('[').rstrip(']'))
+    # loss = F.nll_loss(pred, target)
+    # pred_choice = pred.data.max(1)[1]
+    # correct = pred_choice.eq(target.data).cpu().sum()
+    # print('i:%d  loss: %f accuracy: %f' % (i, loss.data.item(), correct / float(opt.batchSize)))
